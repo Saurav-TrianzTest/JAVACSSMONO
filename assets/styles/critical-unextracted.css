@@ -1,0 +1,30 @@
+/* CRITICAL CSS — above-fold styles NOT extracted for SSR container.
+   This file is loaded as an external stylesheet instead of being inlined.
+   cz-css-1008: critical CSS must be inlined in the HTML head for SSR containers. */
+
+/* Above-fold critical styles served as external CSS file */
+body {
+    margin: 0;
+    font-family: system-ui, sans-serif;
+    background: #fff;
+}
+
+/* Critical header — not inlined, loaded externally */
+header {
+    height: 56px;
+    background: var(--primary-color, #0a2240);
+}
+
+/* Critical hero — above-fold, must be inlined for SSR FCP */
+.hero-critical {
+    display: flex;
+    align-items: center;
+    min-height: 400px;
+}
+
+/* Critical navigation — not extracted from SSR build */
+nav.critical-nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
