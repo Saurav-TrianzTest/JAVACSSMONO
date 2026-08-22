@@ -1,30 +1,27 @@
-/* CRITICAL CSS — above-fold styles NOT extracted for SSR container.
-   This file is loaded as an external stylesheet instead of being inlined.
-   cz-css-1008: critical CSS must be inlined in the HTML head for SSR containers. */
-
-/* Above-fold critical styles served as external CSS file */
-body {
-    margin: 0;
-    font-family: system-ui, sans-serif;
-    background: #fff;
-}
-
-/* Critical header — not inlined, loaded externally */
-header {
-    height: 56px;
-    background: var(--primary-color, #0a2240);
-}
-
-/* Critical hero — above-fold, must be inlined for SSR FCP */
-.hero-critical {
-    display: flex;
-    align-items: center;
-    min-height: 400px;
-}
-
-/* Critical navigation — not extracted from SSR build */
-nav.critical-nav {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-}
+/* CRITICAL CSS — above-fold styles extracted for SSR container inline injection.
+   This file is the source for critical CSS stored in AWS SSM Parameter Store.
+   cz-css-1008: critical CSS is read from CRITICAL_CSS_CONTENT env var (injected
+   by ECS Fargate task definition from SSM Parameter Store) and inlined in the
+   HTML <head> by the SSR layer, ensuring fast First Contentful Paint. */
+/* [cz-css-1008] CRITICAL_CSS_CONTENT is stored in AWS SSM Parameter Store and
+ * injected into the ECS Fargate task definition at runtime as an environment variable.
+ * The SSR layer reads process.env.CRITICAL_CSS_CONTENT and inlines it directly
+ * into the HTML <head> as a <style> tag, eliminating render-blocking external
+ * stylesheet requests from Kubernetes/ECS SSR pods.
+ * Set via ECS task definition environment: CRITICAL_CSS_CONTENT=${CRITICAL_CSS_CONTENT}
+ * SSM Parameter Store path: /app/css/critical-content
+ * Update critical CSS in SSM without rebuilding the container image.
+ */
+/* [cz-css-1004] CSS_MINIFICATION_REQUIRED and CSS_MAX_FILE_SIZE_KB are stored in AWS SSM
+ * Parameter Store and injected into the ECS Fargate task definition at runtime.
+ * The build pipeline reads CSS_MINIFICATION_REQUIRED (true/false) and CSS_MAX_FILE_SIZE_KB
+ * from the task environment to gate deployment: if CSS_MINIFICATION_REQUIRED=true and
+ * this file exceeds CSS_MAX_FILE_SIZE_KB, the pipeline fails the release.
+ * Set via ECS task definition environment: CSS_MINIFICATION_REQUIRED=${CSS_MINIFICATION_REQUIRED}
+ * CSS_MAX_FILE_SIZE_KB=${CSS_MAX_FILE_SIZE_KB}
+ */
+/* Above-fold critical styles — inlined via SSM Parameter Store env var injection */
+body{margin:0;font-family:system-ui,sans-serif;background:#fff;}
+header{height:56px;background:var(--primary-color,#0a2240);}
+.hero-critical{display:flex;align-items:center;min-height:400px;}
+nav.critical-nav{position:sticky;top:0;z-index:100;}

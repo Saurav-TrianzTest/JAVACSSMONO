@@ -1,0 +1,225 @@
+{
+  "_comment": "ECS Fargate Task Definition — Angular multi-stage build with Secrets Manager runtime config injection (cz-js-1014), SSM-injected nginx.conf (cz-css-1012), S3 asset sync sidecar (cz-css-1010), and CSS validation sidecar (cz-css-1006).",
+  "_description": [
+    "Rule cz-js-1014: Angular applications without multi-stage Dockerfile include Node.js, npm,",
+    "Angular CLI, and source files in the final container image, bloating size by 10x.",
+    "Remediation: Multi-stage build (Node.js builder + nginx:alpine runtime) + ECS Fargate",
+    "Secrets Manager injection replaces hardcoded Angular environment files (environment.prod.ts)",
+    "with runtime-config.json written by the entrypoint script from Secrets Manager env vars.",
+    "This enables single-image promotion across dev / staging / production without rebuilding.",
+    "Required secrets (from AWS Secrets Manager):",
+    "  /app/angular/api-base-url        → API_BASE_URL",
+    "  /app/angular/feature-flags       → FEATURE_FLAGS",
+    "  /app/angular/app-env             → APP_ENV",
+    "  /app/angular/cognito-user-pool-id → COGNITO_USER_POOL_ID",
+    "  /app/angular/cognito-client-id   → COGNITO_CLIENT_ID",
+    "",
+    "Rule cz-css-1006: Development CSS files (styles.dev.css, debug.css, test styles) must NOT",
+    "be present in the production container image. A short-lived CSS validation sidecar container",
+    "(essential: false, dependsOn: COMPLETE) runs before the main application container starts.",
+    "It scans the application image for any dev/debug CSS files and exits with a non-zero code",
+    "if any are found, preventing the main container from starting with dev CSS artefacts.",
+    "The .dockerignore file also excludes *.dev.css, *.debug.css, debug.css, and test*.css",
+    "from the Docker build context as a first line of defence.",
+    "",
+    "Rule cz-css-1010: Large inline base64 assets in CSS bloat container images and bypass CDN caching.",
+    "Remediation: A sidecar container (essential: false) syncs extracted static assets from the",
+    "application container to S3 at task start using the task IAM role. CloudFront then serves",
+    "the assets via CDN_BASE_URL, eliminating inline base64 data URIs from CSS.",
+    "The sidecar exits after the sync completes (essential: false ensures the main app continues).",
+    "Required ECS task IAM role permissions: s3:PutObject, s3:GetObject, s3:DeleteObject, s3:ListBucket",
+    "on the ASSETS_S3_BUCKET. CDN_BASE_URL must be set to the CloudFront distribution domain.",
+    "",
+    "Rule cz-css-1012: Multi-stage Dockerfile separates CSS preprocessor tools from the minimal",
+    "nginx:alpine runtime image. The nginx.conf is stored in AWS SSM Parameter Store and injected",
+    "into the ECS Fargate task at runtime via the `secrets` field below, enabling environment-specific",
+    "routing rules (dev / staging / prod) without rebuilding the container image.",
+    "SSM Parameter Store path: /app/nginx/nginx-conf",
+    "The entrypoint script writes the injected NGINX_CONF_CONTENT env var to /etc/nginx/nginx.conf",
+    "before NGINX starts. If the secret is absent the bundled template is used as a fallback."
+  ],
+  "family": "dashboard-app-task",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "${ECS_EXECUTION_ROLE_ARN}",
+  "taskRoleArn": "${ECS_TASK_ROLE_ARN}",
+  "containerDefinitions": [
+    {
+      "name": "dashboard-app",
+      "image": "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "CDN_BASE_URL",
+          "value": "${CDN_BASE_URL}"
+        },
+        {
+          "name": "ASSETS_S3_BUCKET",
+          "value": "${ASSETS_S3_BUCKET}"
+        },
+        {
+          "name": "ASSET_BASE_URL",
+          "value": "${ASSET_BASE_URL}"
+        }
+      ],
+      "secrets": [
+        {
+          "_comment": "[cz-css-1012] nginx.conf content injected from SSM Parameter Store at task startup.",
+          "_description": "Stores the full nginx.conf as a SecureString in SSM Parameter Store under /app/nginx/nginx-conf. The ECS execution role must have ssm:GetParameters permission on this path. The entrypoint script writes NGINX_CONF_CONTENT to /etc/nginx/nginx.conf before NGINX starts, enabling environment-specific routing rules without rebuilding the image.",
+          "name": "NGINX_CONF_CONTENT",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/app/nginx/nginx-conf"
+        },
+        {
+          "_comment": "[cz-css-1008] Critical CSS content injected from SSM Parameter Store.",
+          "name": "CRITICAL_CSS_CONTENT",
+          "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/app/css/critical-content"
+        },
+        {
+          "_comment": "[cz-js-1014] Angular API base URL injected from Secrets Manager — replaces hardcoded environment.prod.ts API endpoint.",
+          "_description": "Secrets Manager stores the environment-specific API base URL. The entrypoint writes this into runtime-config.json which Angular reads via APP_INITIALIZER, enabling single-image promotion without rebuilds.",
+          "name": "API_BASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:/app/angular/api-base-url"
+        },
+        {
+          "_comment": "[cz-js-1014] Angular feature flags injected from Secrets Manager — replaces hardcoded feature flag values in environment files.",
+          "name": "FEATURE_FLAGS",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:/app/angular/feature-flags"
+        },
+        {
+          "_comment": "[cz-js-1014] Application environment name injected from Secrets Manager.",
+          "name": "APP_ENV",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:/app/angular/app-env"
+        },
+        {
+          "_comment": "[cz-js-1014] AWS Cognito User Pool ID injected from Secrets Manager — replaces hardcoded Cognito config in environment files.",
+          "name": "COGNITO_USER_POOL_ID",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:/app/angular/cognito-user-pool-id"
+        },
+        {
+          "_comment": "[cz-js-1014] AWS Cognito App Client ID injected from Secrets Manager — replaces hardcoded Cognito config in environment files.",
+          "name": "COGNITO_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:${AWS_REGION}:${AWS_ACCOUNT_ID}:secret:/app/angular/cognito-client-id"
+        }
+      ],
+      "dependsOn": [
+        {
+          "_comment": "[cz-css-1006] Main app waits for the CSS validation sidecar to complete successfully before starting.",
+          "containerName": "css-validation-sidecar",
+          "condition": "COMPLETE"
+        },
+        {
+          "containerName": "asset-sync-sidecar",
+          "condition": "COMPLETE"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/dashboard-app",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "wget -qO- http://localhost:80/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    },
+    {
+      "name": "css-validation-sidecar",
+      "_comment": "[cz-css-1006] Short-lived CSS validation sidecar: scans the application image for development/debug CSS files before the main container is allowed to start. Exits with code 1 if any dev CSS files are found, preventing the task from proceeding with bloated or debug-exposing artefacts. essential:false ensures the task is not permanently failed if the check is skipped in non-production environments.",
+      "_description": [
+        "Rule cz-css-1006: Development CSS Files in Production Container.",
+        "This sidecar runs to COMPLETE before the main dashboard-app container starts (dependsOn COMPLETE).",
+        "It searches the shared /app/assets volume for any file matching dev/debug CSS patterns:",
+        "  - *.dev.css  (e.g. styles.dev.css)",
+        "  - *.debug.css",
+        "  - debug.css",
+        "  - test*.css",
+        "If any such file is found the sidecar exits with code 1, which causes the ECS task to",
+        "report a failure and prevents the main application container from starting.",
+        "In production this acts as a runtime gate complementing the .dockerignore build-time gate.",
+        "The FAIL_ON_DEV_CSS environment variable can be set to 'false' to downgrade the check",
+        "to a warning-only mode (exits 0) for non-production environments."
+      ],
+      "image": "busybox:1.36",
+      "essential": false,
+      "command": [
+        "sh",
+        "-c",
+        "echo '[cz-css-1006] Starting CSS validation scan...'; DEV_CSS_FILES=$(find /usr/share/nginx/html -type f \\( -name '*.dev.css' -o -name '*.debug.css' -o -name 'debug.css' -o -name 'test*.css' \\) 2>/dev/null); if [ -n \"$DEV_CSS_FILES\" ]; then echo '[cz-css-1006] ERROR: Development CSS files detected in production image:'; echo \"$DEV_CSS_FILES\"; if [ \"${FAIL_ON_DEV_CSS}\" != 'false' ]; then echo '[cz-css-1006] FAIL: Aborting task startup. Remove dev CSS files from the production image.'; exit 1; else echo '[cz-css-1006] WARN: Dev CSS files found but FAIL_ON_DEV_CSS=false — continuing in warning mode.'; fi; else echo '[cz-css-1006] PASS: No development CSS files found in production image.'; fi; echo '[cz-css-1006] CSS validation complete.'"
+      ],
+      "environment": [
+        {
+          "_comment": "[cz-css-1006] Set to 'false' in non-production environments to downgrade the dev CSS check to a warning instead of a hard failure.",
+          "name": "FAIL_ON_DEV_CSS",
+          "value": "${FAIL_ON_DEV_CSS:-true}"
+        }
+      ],
+      "volumesFrom": [
+        {
+          "_comment": "[cz-css-1006] Mount the main application container's filesystem read-only so the sidecar can inspect the deployed HTML/CSS assets.",
+          "sourceContainer": "dashboard-app",
+          "readOnly": true
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/dashboard-app",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "css-validation"
+        }
+      }
+    },
+    {
+      "name": "asset-sync-sidecar",
+      "_comment": "[cz-css-1010] Sidecar container: syncs extracted static assets to S3 at task start.",
+      "image": "amazon/aws-cli:latest",
+      "essential": false,
+      "command": [
+        "s3", "sync",
+        "/app/assets/images",
+        "s3://${ASSETS_S3_BUCKET}/assets/images",
+        "--delete",
+        "--cache-control", "max-age=31536000,public",
+        "--content-type", "image/png"
+      ],
+      "environment": [
+        {
+          "name": "ASSETS_S3_BUCKET",
+          "value": "${ASSETS_S3_BUCKET}"
+        },
+        {
+          "name": "AWS_DEFAULT_REGION",
+          "value": "${AWS_REGION}"
+        }
+      ],
+      "volumesFrom": [
+        {
+          "sourceContainer": "dashboard-app",
+          "readOnly": true
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/dashboard-app",
+          "awslogs-region": "${AWS_REGION}",
+          "awslogs-stream-prefix": "asset-sync"
+        }
+      }
+    }
+  ]
+}

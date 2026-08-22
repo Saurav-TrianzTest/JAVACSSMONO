@@ -1,0 +1,34 @@
+{
+  "serviceName": "dashboard-app-service",
+  "cluster": "{{CLUSTER_NAME}}",
+  "taskDefinition": "dashboard-app-task",
+  "desiredCount": 2,
+  "launchType": "FARGATE",
+  "networkConfiguration": {
+    "awsvpcConfiguration": {
+      "subnets": ["{{SUBNET_1}}", "{{SUBNET_2}}"],
+      "securityGroups": ["{{SECURITY_GROUP}}"],
+      "assignPublicIp": "ENABLED"
+    }
+  },
+  "deploymentConfiguration": {
+    "maximumPercent": 200,
+    "minimumHealthyPercent": 50
+  },
+  "enableECSManagedTags": true,
+  "propagateTags": "SERVICE",
+  "tags": [
+    {
+      "key": "Environment",
+      "value": "production"
+    },
+    {
+      "key": "Application",
+      "value": "dashboard-app"
+    },
+    {
+      "key": "ManagedBy",
+      "value": "ecs-fargate"
+    }
+  ]
+}

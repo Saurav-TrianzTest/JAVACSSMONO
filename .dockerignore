@@ -1,0 +1,79 @@
+# =============================================================================
+# .dockerignore — dashboard-app Spring Boot Application
+# Excludes files that must NOT be sent to the Docker build context.
+# =============================================================================
+
+# ── Maven build output ────────────────────────────────────────────────────────
+target/
+
+# ── Maven wrapper files (CRITICAL: never copy into Docker build context) ──────
+mvnw
+mvnw.cmd
+.mvn/
+
+# ── Gradle wrapper files (preventive) ────────────────────────────────────────
+gradlew
+gradlew.bat
+gradle/wrapper/
+gradle/
+
+# ── Git metadata ──────────────────────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+
+# ── IDE and editor artefacts ──────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.DS_Store
+Thumbs.db
+.classpath
+.project
+.settings/
+
+# ── Documentation ─────────────────────────────────────────────────────────────
+README.md
+docs/
+*.md
+
+# ── CI/CD configuration ───────────────────────────────────────────────────────
+buildspec*.yml
+.codebuild/
+Jenkinsfile
+.github/
+.gitlab-ci.yml
+
+# ── Test sources ──────────────────────────────────────────────────────────────
+src/test/
+
+# ── CSS development / debug files ────────────────────────────────────────────
+**/*.dev.css
+**/*.debug.css
+**/debug.css
+**/styles.dev.css
+**/test*.css
+
+# ── CSS preprocessor source files ────────────────────────────────────────────
+**/*.scss
+**/*.scss.css
+**/*.less
+**/*.styl
+**/*.stylus
+
+# ── Node.js artefacts ─────────────────────────────────────────────────────────
+node_modules/
+npm-debug.log
+yarn-error.log
+package.json
+package-lock.json
+
+# ── Docker files (not needed inside the image) ────────────────────────────────
+docker-compose*.yml
+docker-compose*.yaml
+
+# ── Scripts directory ─────────────────────────────────────────────────────────
+scripts/
+
+# ── ECS manifests ─────────────────────────────────────────────────────────────
+ecs/

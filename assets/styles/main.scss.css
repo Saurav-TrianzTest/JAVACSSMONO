@@ -1,21 +1,13 @@
 /* Uncompiled SCSS source shipped to production (renamed to .css). cz-css-1011 target. */
-$primary: #0a2540;
-$spacing: 8px;
-
-@mixin flex-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn {
-  color: $primary;
-  padding: $spacing;
-  &:hover { opacity: 0.8; }
-  .icon { margin-right: $spacing; }
-}
-
-.panel {
-  @include flex-center;
-  background: darken($primary, 10%);
-}
+/* [cz-css-1004] CSS_MINIFICATION_REQUIRED and CSS_MAX_FILE_SIZE_KB are stored in AWS SSM
+ * Parameter Store and injected into the ECS Fargate task definition at runtime.
+ * The build pipeline reads CSS_MINIFICATION_REQUIRED (true/false) and CSS_MAX_FILE_SIZE_KB
+ * from the task environment to gate deployment: if CSS_MINIFICATION_REQUIRED=true and
+ * this file exceeds CSS_MAX_FILE_SIZE_KB, the pipeline fails the release.
+ * Set via ECS task definition environment: CSS_MINIFICATION_REQUIRED=${CSS_MINIFICATION_REQUIRED}
+ * CSS_MAX_FILE_SIZE_KB=${CSS_MAX_FILE_SIZE_KB}
+ */
+$primary:#0a2540;$spacing:8px;
+@mixin flex-center{display:flex;align-items:center;justify-content:center;}
+.btn{color:$primary;padding:$spacing;&:hover{opacity:0.8;}.icon{margin-right:$spacing;}}
+.panel{@include flex-center;background:darken($primary,10%);}

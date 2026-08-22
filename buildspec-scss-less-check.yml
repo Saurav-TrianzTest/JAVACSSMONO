@@ -1,0 +1,145 @@
+# =============================================================================
+# buildspec-scss-less-check.yml
+# AWS CodeBuild project specification for SCSS/LESS source file exclusion
+# enforcement before ECR push and ECS Fargate deployment.
+#
+# Remediation for: cz-css-1011 (SCSS/LESS Source Files in Production Container)
+# Strategy: AWS CodeBuild Buildspec for SCSS/LESS Exclusion Enforcement in
+#           Fargate Pipelines
+#
+# This buildspec:
+#   1. Builds the Docker image from the project source.
+#   2. Runs a verification step that inspects the final container image to
+#      confirm no SCSS or LESS source files are present.
+#   3. Fails the pipeline (non-zero exit) if any .scss or .less files are
+#      detected inside the image, preventing the bloated image from being
+#      pushed to ECR or deployed to ECS Fargate.
+#   4. Pushes the verified, clean image to Amazon ECR only when the check passes.
+#
+# Occurrences addressed (cz-css-1011):
+#   - assets/styles/main.scss.css  (lines 2, 3, 5, 14, 19) — uncompiled SCSS
+#     source shipped inside a .css-named file
+#   - styles/main.less             (line 2) — raw LESS source file
+#
+# Required CodeBuild environment variables (set in the CodeBuild project or
+# via AWS SSM Parameter Store / Secrets Manager):
+#   AWS_DEFAULT_REGION  - e.g. us-east-1
+#   AWS_ACCOUNT_ID      - 12-digit AWS account number
+#   ECR_REPOSITORY_NAME - ECR repository name (e.g. dashboard-app)
+#   IMAGE_TAG           - Docker image tag (e.g. latest or
+#                         $CODEBUILD_RESOLVED_SOURCE_VERSION)
+# =============================================================================
+
+version: 0.2
+
+env:
+  variables:
+    # Fallback defaults; override in the CodeBuild project environment.
+    SCSS_LESS_CHECK_ENABLED: "true"
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo "=== [cz-css-1011] SCSS/LESS Exclusion Enforcement — install phase ==="
+      - echo "Docker version: $(docker --version)"
+
+  pre_build:
+    commands:
+      - echo "=== Authenticating with Amazon ECR ==="
+      - aws ecr get-login-password --region ${AWS_DEFAULT_REGION} |
+          docker login --username AWS --password-stdin
+          ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+      - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY_NAME}:${IMAGE_TAG}"
+      - echo "Target image: ${IMAGE_URI}"
+
+  build:
+    commands:
+      - echo "=== Building Docker image ==="
+      - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY_NAME}:${IMAGE_TAG}"
+      - docker build -t "${IMAGE_URI}" .
+      - echo "=== Docker image built: ${IMAGE_URI} ==="
+
+  post_build:
+    commands:
+      - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY_NAME}:${IMAGE_TAG}"
+
+      # -----------------------------------------------------------------------
+      # [cz-css-1011] Verify no SCSS/LESS source files exist in the final image.
+      #
+      # Spin up a temporary container from the just-built image and search its
+      # entire filesystem for any .scss or .less files.  If any are found the
+      # build is failed immediately so the image is never pushed to ECR and
+      # never deployed to ECS Fargate.
+      #
+      # Addresses occurrences:
+      #   - assets/styles/main.scss.css  lines 2-2, 3-3, 5-5, 14-14, 19-19
+      #   - styles/main.less             line 2-2
+      # -----------------------------------------------------------------------
+      - echo "=== [cz-css-1011] Scanning final image for SCSS/LESS source files ==="
+      - |
+        SCSS_LESS_FILES=$(docker run --rm --entrypoint="" "${IMAGE_URI}" \
+          sh -c "find / -type f \( -name '*.scss' -o -name '*.less' \) \
+                 2>/dev/null | grep -v '^/proc' | grep -v '^/sys'" || true)
+
+        if [ -n "${SCSS_LESS_FILES}" ]; then
+          echo "ERROR: [cz-css-1011] SCSS/LESS source files detected in the production container image."
+          echo "The following files must NOT be present in the runtime image:"
+          echo "${SCSS_LESS_FILES}"
+          echo ""
+          echo "Remediation:"
+          echo "  1. Ensure your Dockerfile uses a multi-stage build and copies only"
+          echo "     compiled CSS artefacts into the final stage."
+          echo "  2. Add '*.scss' and '*.less' patterns to .dockerignore so they are"
+          echo "     excluded from the build context sent to the Docker daemon."
+          echo "  3. Re-run the pipeline after applying the above changes."
+          exit 1
+        else
+          echo "PASS: [cz-css-1011] No SCSS/LESS source files found in the production image."
+        fi
+
+      # -----------------------------------------------------------------------
+      # Also verify that the known offending files from the cz-css-1011 report
+      # are absent from the image filesystem.
+      # -----------------------------------------------------------------------
+      - echo "=== [cz-css-1011] Verifying specific reported SCSS/LESS files are absent ==="
+      - |
+        OFFENDING_FILES=(
+          "assets/styles/main.scss.css"
+          "styles/main.less"
+        )
+        FOUND_OFFENDERS=""
+        for f in "${OFFENDING_FILES[@]}"; do
+          RESULT=$(docker run --rm --entrypoint="" "${IMAGE_URI}" \
+            sh -c "find / -path '*/${f}' -type f 2>/dev/null | grep -v '^/proc' | grep -v '^/sys'" || true)
+          if [ -n "${RESULT}" ]; then
+            echo "  FAIL: ${f} is present in the image at: ${RESULT}"
+            FOUND_OFFENDERS="${FOUND_OFFENDERS} ${f}"
+          else
+            echo "  PASS: ${f} is absent from the image."
+          fi
+        done
+        if [ -n "${FOUND_OFFENDERS}" ]; then
+          echo "ERROR: [cz-css-1011] Offending SCSS/LESS source files still present in image."
+          exit 1
+        fi
+        echo "=== [cz-css-1011] All SCSS/LESS exclusion checks passed. ==="
+
+      - echo "=== Pushing verified image to ECR ==="
+      - docker push "${IMAGE_URI}"
+      - echo "=== Image pushed: ${IMAGE_URI} ==="
+
+      # Write the image definition file consumed by ECS Fargate deployment.
+      - printf '[{"name":"dashboard-app","imageUri":"%s"}]' "${IMAGE_URI}" > imagedefinitions.json
+      - echo "=== imagedefinitions.json written ==="
+      - cat imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
+  discard-paths: yes
+
+cache:
+  paths:
+    - '/root/.npm/**/*'

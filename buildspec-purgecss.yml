@@ -1,0 +1,96 @@
+# =============================================================================
+# buildspec-purgecss.yml
+# AWS CodeBuild project specification for CSS optimization before ECR push.
+#
+# Remediation for: cz-css-1005 (Unused CSS in Container Images)
+# Strategy: CodeBuild CI Pipeline with PurgeCSS Step for Automated ECS Fargate
+#           Image Optimization
+#
+# This buildspec:
+#   1. Installs PurgeCSS and its CLI tool.
+#   2. Runs PurgeCSS against all CSS files in assets/styles/, scanning the
+#      Java/HTML/JS source tree for used selectors.
+#   3. Builds the Docker image from the optimized CSS.
+#   4. Pushes the optimized image to Amazon ECR so every ECS Fargate task
+#      revision uses a CSS-optimized image without manual intervention.
+#
+# Required CodeBuild environment variables (set in the CodeBuild project or
+# via AWS SSM Parameter Store / Secrets Manager):
+#   AWS_DEFAULT_REGION  - e.g. us-east-1
+#   AWS_ACCOUNT_ID      - 12-digit AWS account number
+#   ECR_REPOSITORY_NAME - ECR repository name (e.g. dashboard-app)
+#   IMAGE_TAG           - Docker image tag (e.g. latest or $CODEBUILD_RESOLVED_SOURCE_VERSION)
+# =============================================================================
+
+version: 0.2
+
+env:
+  variables:
+    # Fallback defaults; override in the CodeBuild project environment.
+    PURGECSS_VERSION: "5.0.0"
+    CSS_SOURCE_DIR: "assets/styles"
+    CSS_CONTENT_GLOB: "src/**/*.{java,html,js,jsx,ts,tsx},frontend/**/*.{js,jsx,ts,tsx}"
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+    commands:
+      - echo "=== [cz-css-1005] Installing PurgeCSS CLI ==="
+      - npm install -g purgecss@${PURGECSS_VERSION}
+      - echo "PurgeCSS version: $(purgecss --version)"
+
+  pre_build:
+    commands:
+      - echo "=== Authenticating with Amazon ECR ==="
+      - aws ecr get-login-password --region ${AWS_DEFAULT_REGION} |
+          docker login --username AWS --password-stdin
+          ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+
+      - echo "=== [cz-css-1005] Running PurgeCSS to remove unused CSS rules ==="
+      # PurgeCSS scans the content files for used CSS selectors and removes
+      # any rules not referenced in the application source.  The purged files
+      # overwrite the originals in-place so the subsequent Docker build picks
+      # up the optimised stylesheets automatically.
+      - |
+        for css_file in ${CSS_SOURCE_DIR}/*.css; do
+          echo "  Purging: ${css_file}"
+          purgecss \
+            --css "${css_file}" \
+            --content ${CSS_CONTENT_GLOB} \
+            --output "${css_file}" \
+            --safelist "hero" "banner" "icon-arrow" "splash"
+          echo "  Done:    ${css_file}"
+        done
+      - echo "=== PurgeCSS step complete ==="
+
+      # Report file sizes after purging for audit trail in CodeBuild logs.
+      - echo "=== CSS file sizes after PurgeCSS ==="
+      - du -sh ${CSS_SOURCE_DIR}/*.css
+
+  build:
+    commands:
+      - echo "=== Building Docker image ==="
+      - IMAGE_URI="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPOSITORY_NAME}:${IMAGE_TAG}"
+      - docker build -t "${IMAGE_URI}" .
+      - echo "=== Docker image built: ${IMAGE_URI} ==="
+
+  post_build:
+    commands:
+      - echo "=== Pushing optimized image to ECR ==="
+      - docker push "${IMAGE_URI}"
+      - echo "=== Image pushed: ${IMAGE_URI} ==="
+
+      # Write the image definition file consumed by ECS Fargate deployment.
+      - printf '[{"name":"dashboard-app","imageUri":"%s"}]' "${IMAGE_URI}" > imagedefinitions.json
+      - echo "=== imagedefinitions.json written ==="
+      - cat imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
+  discard-paths: yes
+
+cache:
+  paths:
+    - '/root/.npm/**/*'

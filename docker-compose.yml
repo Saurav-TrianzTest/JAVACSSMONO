@@ -1,0 +1,53 @@
+version: "3.9"
+
+# =============================================================================
+# docker-compose.yml — dashboard-app Spring Boot Application
+# Application service ONLY — no databases, Kafka, Redis, or other
+# infrastructure services. External services are provided separately and
+# connected via environment variables.
+# =============================================================================
+
+services:
+  dashboard-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dashboard-app:latest
+    container_name: dashboard-app
+    ports:
+      - "8080:8080"
+    environment:
+      # ── JVM tuning ──────────────────────────────────────────────────────────
+      JAVA_OPTS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Xms256m -Xmx512m -XX:+UseG1GC -Djava.security.egd=file:/dev/./urandom -Dfile.encoding=UTF-8 -Duser.timezone=UTC"
+
+      # ── Spring Boot profile ─────────────────────────────────────────────────
+      SPRING_PROFILES_ACTIVE: "docker"
+
+      # ── Application settings ────────────────────────────────────────────────
+      SPRING_APPLICATION_NAME: "dashboard-app"
+      SERVER_PORT: "8080"
+
+      # ── Timezone ────────────────────────────────────────────────────────────
+      TZ: "UTC"
+
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config
+
+    # Health check — uses the custom /api/health endpoint detected in source code.
+    # startPeriod is generous to allow JVM warm-up time.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    restart: unless-stopped
+
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

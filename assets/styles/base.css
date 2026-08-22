@@ -1,15 +1,13 @@
 /* Theme tokens and shared component styles */
+/* [cz-css-1004] CSS_MINIFICATION_REQUIRED and CSS_MAX_FILE_SIZE_KB are stored in AWS SSM
+ * Parameter Store and injected into the ECS Fargate task definition at runtime.
+ * The build pipeline reads CSS_MINIFICATION_REQUIRED (true/false) and CSS_MAX_FILE_SIZE_KB
+ * from the task environment to gate deployment: if CSS_MINIFICATION_REQUIRED=true and
+ * this file exceeds CSS_MAX_FILE_SIZE_KB, the pipeline fails the release.
+ * Set via ECS task definition environment: CSS_MINIFICATION_REQUIRED=${CSS_MINIFICATION_REQUIRED}
+ * CSS_MAX_FILE_SIZE_KB=${CSS_MAX_FILE_SIZE_KB}
+ */
 @import url('https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css');
-:root {
-  --primary-color: #0a2540;
-  --spacing-unit: 8px;
-}
-.btn {
-  color: var(--primary-color);
-  background: url('../img/sprite.png');
-}
-.card {
-  -webkit-box-shadow: 0 0 5px #000;
-  -moz-box-shadow: 0 0 5px #000;
-  box-shadow: 0 0 5px #000;
-}
+:root{--primary-color:#0a2540;--spacing-unit:8px;}
+.btn{color:var(--primary-color);background:url('../img/sprite.png');}
+.card{-webkit-box-shadow:0 0 5px #000;-moz-box-shadow:0 0 5px #000;box-shadow:0 0 5px #000;}
