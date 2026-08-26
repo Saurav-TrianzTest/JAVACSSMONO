@@ -1,0 +1,63 @@
+# Docker build context exclusions for dashboard-app
+# Java / Maven
+target/
+*.class
+*.jar
+*.war
+
+# Maven wrapper — NEVER used inside Docker (system mvn is used instead)
+mvnw
+mvnw.cmd
+.mvn/
+
+# Gradle wrapper — excluded for safety
+gradlew
+gradlew.bat
+gradle/wrapper/
+
+# Node / frontend build artefacts
+node_modules/
+dist/
+build/
+
+# Development and debug CSS files (cz-css-1006)
+**/*.dev.css
+**/styles.dev.css
+**/*.debug.css
+**/debug.css
+**/*.test.css
+**/test.css
+
+# SCSS/LESS preprocessor source files (cz-css-1011)
+**/*.scss
+**/*.sass
+**/*.less
+**/*.styl
+**/*.stylus
+
+# Git metadata
+.git/
+.gitignore
+.gitattributes
+
+# IDE / OS artefacts
+.idea/
+.vscode/
+*.iml
+.DS_Store
+*.swp
+*.swo
+Thumbs.db
+
+# Documentation
+*.md
+docs/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+Jenkinsfile
+
+# Scripts (not needed in image)
+scripts/
+kubernetes/

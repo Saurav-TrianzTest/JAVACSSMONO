@@ -1,0 +1,18 @@
+{
+  "name": "css-minification-build",
+  "version": "1.0.0",
+  "description": "CSS minification, purge, and critical-CSS extraction pipeline for production container builds (cz-css-1004 / cz-css-1005 / cz-css-1008 remediation)",
+  "private": true,
+  "scripts": {
+    "build:css": "purgecss --config purgecss.config.js && postcss assets/styles/*.css --dir assets/styles/ --no-map",
+    "extract:critical": "node critters.config.js"
+  },
+  "dependencies": {
+    "@fullhuman/postcss-purgecss": "^5.0.0",
+    "critters": "^0.0.20",
+    "cssnano": "^6.1.2",
+    "postcss": "^8.4.38",
+    "postcss-cli": "^11.0.0",
+    "purgecss": "^5.0.0"
+  }
+}

@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dashboard-app
+  labels:
+    name: dashboard-app
+    app: dashboard-app
+    managed-by: kubectl

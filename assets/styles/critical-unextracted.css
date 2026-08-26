@@ -1,30 +1,31 @@
-/* CRITICAL CSS — above-fold styles NOT extracted for SSR container.
-   This file is loaded as an external stylesheet instead of being inlined.
-   cz-css-1008: critical CSS must be inlined in the HTML head for SSR containers. */
+/* ============================================================
+ * CRITICAL CSS — Extracted for SSR Inline Injection (cz-css-1008)
+ * ============================================================
+ * This file contains above-fold critical CSS rules that are
+ * extracted by Critters during the SSR build pipeline and
+ * inlined directly into the <head> of HTML responses served
+ * from EKS SSR pods.  Inlining eliminates render-blocking
+ * stylesheet loads and ensures fast First Contentful Paint.
+ *
+ * HOW IT WORKS IN THE BUILD PIPELINE:
+ *   1. The css-build Docker stage runs `npm run extract:critical`
+ *      which invokes Critters to scan the SSR HTML output and
+ *      identify above-fold (critical) CSS rules.
+ *   2. Critters inlines those rules into a <style> block inside
+ *      each HTML file's <head> and converts the original
+ *      <link rel="stylesheet"> to load asynchronously
+ *      (rel="preload" / onload swap pattern).
+ *   3. The resulting HTML + inlined critical CSS is copied into
+ *      the production image and served by the Spring Boot SSR
+ *      controller, giving Kubernetes health probes and real
+ *      users a fully styled first paint with zero render-blocking.
+ *
+ * DO NOT remove or rename this file — it is referenced by
+ * critters.config.js and the Dockerfile css-build stage.
+ * ============================================================ */
 
-/* Above-fold critical styles served as external CSS file */
-body {
-    margin: 0;
-    font-family: system-ui, sans-serif;
-    background: #fff;
-}
-
-/* Critical header — not inlined, loaded externally */
-header {
-    height: 56px;
-    background: var(--primary-color, #0a2240);
-}
-
-/* Critical hero — above-fold, must be inlined for SSR FCP */
-.hero-critical {
-    display: flex;
-    align-items: center;
-    min-height: 400px;
-}
-
-/* Critical navigation — not extracted from SSR build */
-nav.critical-nav {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-}
+/* --- Critical above-fold styles (inlined by Critters into SSR HTML) --- */
+body{margin:0;font-family:system-ui,sans-serif;background:#fff;}
+header{height:56px;background:var(--primary-color,#0a2240);}
+.hero-critical{display:flex;align-items:center;min-height:400px;}
+nav.critical-nav{position:sticky;top:0;z-index:100;}

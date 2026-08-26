@@ -1,21 +1,22 @@
-/* Uncompiled SCSS source shipped to production (renamed to .css). cz-css-1011 target. */
-$primary: #0a2540;
-$spacing: 8px;
-
-@mixin flex-center {
+/* Compiled CSS - generated from main.scss during build stage (cz-css-1011 remediation) */
+/* SCSS source variables resolved: $primary=#0a2540, $spacing=8px */
+/* @mixin flex-center compiled to plain CSS declarations */
+.btn {
+  color: #0a2540;
+  padding: 8px;
+}
+/* &:hover nesting compiled to explicit selector */
+.btn:hover {
+  opacity: 0.8;
+}
+/* .icon nested selector compiled */
+.btn .icon {
+  margin-right: 8px;
+}
+/* @include flex-center expanded; darken($primary,10%) resolved to #061829 */
+.panel {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.btn {
-  color: $primary;
-  padding: $spacing;
-  &:hover { opacity: 0.8; }
-  .icon { margin-right: $spacing; }
-}
-
-.panel {
-  @include flex-center;
-  background: darken($primary, 10%);
+  background: #061829;
 }

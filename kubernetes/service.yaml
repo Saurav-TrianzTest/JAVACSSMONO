@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dashboard-app-service
+  namespace: dashboard-app
+  labels:
+    app: dashboard-app
+    managed-by: kubectl
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+    - name: api
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app: dashboard-app
