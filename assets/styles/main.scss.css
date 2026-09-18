@@ -1,21 +1,16 @@
-/* Uncompiled SCSS source shipped to production (renamed to .css). cz-css-1011 target. */
-$primary: #0a2540;
-$spacing: 8px;
-
-@mixin flex-center {
+.btn {
+  color: #0a2540;
+  padding: 8px;
+}
+.btn:hover {
+  opacity: 0.8;
+}
+.btn .icon {
+  margin-right: 8px;
+}
+.panel {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.btn {
-  color: $primary;
-  padding: $spacing;
-  &:hover { opacity: 0.8; }
-  .icon { margin-right: $spacing; }
-}
-
-.panel {
-  @include flex-center;
-  background: darken($primary, 10%);
+  background: #071a2d;
 }

@@ -1,0 +1,51 @@
+version: "3.9"
+
+# =============================================================================
+# docker-compose.yml – dashboard-app (Spring Boot / Java 17)
+# Application service ONLY – external services (DB, cache, etc.) are provided
+# separately and referenced via environment variables.
+# =============================================================================
+
+services:
+  dashboard-app:
+    image: dashboard-app:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dashboard-app
+    ports:
+      - "8080:8080"
+    environment:
+      # Spring profile active inside the container
+      SPRING_PROFILES_ACTIVE: docker
+      # JVM tuning
+      JAVA_OPTS: >-
+        -XX:+UseContainerSupport
+        -XX:MaxRAMPercentage=75.0
+        -Xms256m
+        -Xmx512m
+        -Djava.security.egd=file:/dev/./urandom
+        -Dfile.encoding=UTF-8
+        -Duser.timezone=UTC
+      # Application settings
+      SERVER_PORT: "8080"
+      SPRING_APPLICATION_NAME: dashboard-app
+      # External service connections (override as needed)
+      # DATABASE_URL: jdbc:postgresql://db-host:5432/dashboard
+      # DATABASE_USERNAME: dashboard_user
+      # DATABASE_PASSWORD: changeme
+    volumes:
+      - ./config:/app/config:ro
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+networks:
+  app-network:
+    driver: bridge

@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard-app
+  namespace: dashboard-app
+  labels:
+    app: dashboard-app
+    app.kubernetes.io/name: dashboard-app
+    app.kubernetes.io/version: "1.0.0"
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/managed-by: kubectl
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dashboard-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: dashboard-app
+        app.kubernetes.io/name: dashboard-app
+        app.kubernetes.io/version: "1.0.0"
+    spec:
+      # Ensure pods are spread across availability zones
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: dashboard-app
+      containers:
+        - name: dashboard-app
+          image: "{{IMAGE_URI}}"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "docker"
+            - name: SERVER_PORT
+              value: "8080"
+            - name: SPRING_APPLICATION_NAME
+              value: "dashboard-app"
+            - name: JAVA_OPTS
+              value: >-
+                -XX:+UseContainerSupport
+                -XX:MaxRAMPercentage=75.0
+                -XX:+UnlockExperimentalVMOptions
+                -Xms256m
+                -Xmx512m
+                -Djava.security.egd=file:/dev/./urandom
+                -Dfile.encoding=UTF-8
+                -Duser.timezone=UTC
+            - name: TZ
+              value: "UTC"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "500m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+              scheme: HTTP
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
+            successThreshold: 1
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+      securityContext:
+        fsGroup: 1000
+      terminationGracePeriodSeconds: 30
+      restartPolicy: Always

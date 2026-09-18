@@ -1,0 +1,81 @@
+# Exclude build output
+target/
+
+# Exclude Git metadata
+.git/
+.gitignore
+
+# Exclude documentation
+*.md
+README*
+
+# Exclude Maven wrapper files (use system mvn only)
+mvnw
+mvnw.cmd
+.mvn/
+
+# Exclude Gradle wrapper files (use system gradle only)
+gradlew
+gradlew.bat
+gradle/wrapper/
+
+# Exclude IDE and editor files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+
+# Exclude OS metadata
+.DS_Store
+Thumbs.db
+
+# Exclude test reports and coverage
+*.xml.bak
+surefire-reports/
+jacoco.exec
+
+# Exclude local environment files
+.env
+.env.*
+*.local
+
+# Exclude Node.js artifacts (frontend build tools)
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Exclude development CSS files (cz-css-1006)
+**/*.dev.css
+**/styles.dev.css
+**/debug.css
+**/*.debug.css
+
+# Exclude SCSS/LESS/Stylus preprocessor source files (cz-css-1011)
+**/*.scss
+**/*.sass
+**/*.less
+**/*.styl
+**/*.stylus
+
+# Exclude test and spec files
+**/*.test.js
+**/*.spec.js
+
+# Exclude Docker files themselves
+docker-compose*.yml
+.dockerignore
+
+# Exclude Kubernetes manifests
+kubernetes/
+
+# Exclude scripts directory
+scripts/
+
+# Exclude docs
+docs/
