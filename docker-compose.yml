@@ -1,0 +1,46 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml — dashboard-app (application service only)
+#
+# NOTE: This file contains ONLY the application container.
+#       All external services (databases, caches, message brokers, etc.)
+#       are expected to be provided separately and referenced via
+#       environment variables below.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  dashboard-app:
+    image: dashboard-app:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dashboard-app
+    ports:
+      - "8080:8080"
+    environment:
+      # Spring profile
+      SPRING_PROFILES_ACTIVE: docker
+      # Application name
+      SPRING_APPLICATION_NAME: dashboard-app
+      # Server port (matches application.properties)
+      SERVER_PORT: "8080"
+      # JVM options
+      JAVA_OPTS: >-
+        -XX:+UseContainerSupport
+        -XX:MaxRAMPercentage=75.0
+        -Xms256m
+        -Xmx512m
+        -Dfile.encoding=UTF-8
+        -Duser.timezone=UTC
+      # ── External service connections (override at runtime) ──────────────
+      # DATABASE_URL: jdbc:postgresql://db-host:5432/dashboard
+      # DATABASE_USERNAME: dashboard_user
+      # DATABASE_PASSWORD: changeme
+    restart: unless-stopped
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

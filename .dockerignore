@@ -1,0 +1,63 @@
+# ── Java / Maven wrapper files (NEVER needed inside the image) ────────────────
+mvnw
+mvnw.cmd
+.mvn/
+
+# ── Gradle wrapper files ──────────────────────────────────────────────────────
+gradlew
+gradlew.bat
+gradle/wrapper/
+
+# ── Build output (rebuilt inside Docker) ─────────────────────────────────────
+target/
+
+# ── Version control ───────────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ── IDE / editor artefacts ────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+
+# ── OS artefacts ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Documentation ─────────────────────────────────────────────────────────────
+*.md
+docs/
+
+# ── Test sources (not needed at runtime) ─────────────────────────────────────
+src/test/
+
+# ── Node / frontend build artefacts ──────────────────────────────────────────
+node_modules/
+npm-debug.log
+.npm/
+dist/
+
+# ── Development CSS files (cz-css-1006) ──────────────────────────────────────
+assets/styles/styles.dev.css
+**/*.dev.css
+**/*.debug.css
+
+# ── SCSS / LESS source files (compiled in separate stage) ────────────────────
+**/*.scss
+**/*.less
+assets/styles/main.scss.css
+styles/main.less
+.sass-cache/
+
+# ── Kubernetes / scripts (not part of the application image) ─────────────────
+kubernetes/
+scripts/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
