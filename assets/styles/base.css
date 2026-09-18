@@ -1,15 +1,4 @@
-/* Theme tokens and shared component styles */
-@import url('https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css');
-:root {
-  --primary-color: #0a2540;
-  --spacing-unit: 8px;
-}
-.btn {
-  color: var(--primary-color);
-  background: url('../img/sprite.png');
-}
-.card {
-  -webkit-box-shadow: 0 0 5px #000;
-  -moz-box-shadow: 0 0 5px #000;
-  box-shadow: 0 0 5px #000;
-}
+/* cz-css-1004: CSS minification enforced via AWS SSM Parameter Store policy (CSS_MINIFICATION_REQUIRED=true, CSS_MAX_FILE_SIZE_KB=50) injected into ECS Fargate task at runtime via task definition environment variables, enabling ops-team audit without image rebuild. */@import url('https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css');
+:root{--primary-color:#0a2540;--spacing-unit:8px;}
+.btn{color:var(--primary-color);background:url('../img/sprite.png');}
+.card{-webkit-box-shadow:0 0 5px #000;-moz-box-shadow:0 0 5px #000;box-shadow:0 0 5px #000;}

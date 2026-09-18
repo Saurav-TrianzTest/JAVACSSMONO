@@ -1,0 +1,290 @@
+# =============================================================================
+# AWS CodeBuild Build Specification
+# =============================================================================
+# Rules: cz-css-1005 — Unused CSS in Container Images
+#        cz-css-1010 — Large Inline Base64 Assets in CSS
+#        cz-css-1011 — SCSS/LESS Source Files in Production Container
+#
+# Strategy: CodeBuild CI Pipeline with PurgeCSS Step for Automated
+#           ECS Fargate Image Optimization
+#
+# This buildspec implements an AWS CodeBuild project that:
+#   1. Compiles Less → CSS (existing step)
+#   2. Runs PurgeCSS to strip unused CSS selectors (NEW — cz-css-1005 fix)
+#   3. Builds the multi-stage Docker image
+#   4. Verifies no SCSS/LESS files are present in the final container image
+#      before it is pushed to ECR (NEW — cz-css-1011 fix)
+#   5. Pushes the optimised image to Amazon ECR
+#
+# Every ECS Fargate task revision therefore uses a CSS-optimised image
+# without any manual intervention, reducing registry storage costs and
+# speeding up Kubernetes/ECS deployments.
+#
+# cz-css-1010: Large inline base64 assets extracted from CSS files are
+# uploaded to S3 during the build phase and served via CloudFront CDN.
+# An ECS Fargate sidecar container (ecs/task-definition.json) syncs
+# assets/images/ to S3 on every task start, keeping assets in sync.
+#
+# cz-css-1011: A post-build verification step inspects the final container
+# image for any SCSS/LESS/Stylus source files. If any are found the build
+# fails immediately, preventing a bloated image from being pushed to ECR
+# and deployed to ECS Fargate services.
+#
+# Required CodeBuild environment variables (set in the CodeBuild project or
+# via AWS Systems Manager Parameter Store / Secrets Manager):
+#   AWS_DEFAULT_REGION   — e.g. us-east-1
+#   AWS_ACCOUNT_ID       — 12-digit AWS account ID
+#   ECR_REPOSITORY_NAME  — ECR repository name (e.g. dashboard-app)
+#   IMAGE_TAG            — Docker image tag (default: $CODEBUILD_RESOLVED_SOURCE_VERSION)
+# =============================================================================
+
+version: 0.2
+
+env:
+  variables:
+    # Fallback defaults — override these in the CodeBuild project environment
+    ECR_REPOSITORY_NAME: "dashboard-app"
+    NODE_VERSION: "18"
+  parameter-store:
+    ASSET_S3_BUCKET: "/dashboard-app/ASSET_S3_BUCKET"
+    ASSET_BASE_URL: "/dashboard-app/ASSET_BASE_URL"
+    # Optional: pull sensitive values from SSM Parameter Store at build time
+    # ASSET_BASE_URL: "/dashboard-app/ASSET_BASE_URL"
+    # Uncomment and configure as needed per environment
+
+phases:
+
+  # ---------------------------------------------------------------------------
+  # install: provision build tooling
+  # ---------------------------------------------------------------------------
+  install:
+    runtime-versions:
+      nodejs: 18
+      java: corretto17
+    commands:
+      - echo "=== [install] Installing build dependencies ==="
+      # Install Less compiler and PurgeCSS CLI
+      - npm install --global less @fullhuman/postcss-purgecss purgecss
+      # Verify installations
+      - lessc --version
+      - purgecss --version
+      - echo "=== [install] Build tooling ready ==="
+
+  # ---------------------------------------------------------------------------
+  # pre_build: authenticate with ECR and prepare the workspace
+  # ---------------------------------------------------------------------------
+  pre_build:
+    commands:
+      - echo "=== [pre_build] Authenticating with Amazon ECR ==="
+      - |
+        aws ecr get-login-password --region $AWS_DEFAULT_REGION \
+          | docker login --username AWS \
+            --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - |
+        export IMAGE_TAG=${CODEBUILD_RESOLVED_SOURCE_VERSION:-latest}
+        export ECR_IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_REPOSITORY_NAME:$IMAGE_TAG
+        export ECR_IMAGE_URI_LATEST=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_REPOSITORY_NAME:latest
+        echo "ECR_IMAGE_URI=$ECR_IMAGE_URI" >> /tmp/build_env
+        echo "ECR_IMAGE_URI_LATEST=$ECR_IMAGE_URI_LATEST" >> /tmp/build_env
+        echo "IMAGE_TAG=$IMAGE_TAG" >> /tmp/build_env
+      - echo "=== [pre_build] ECR authentication complete ==="
+
+  # ---------------------------------------------------------------------------
+  # build: compile CSS, run PurgeCSS, build Docker image
+  # ---------------------------------------------------------------------------
+  build:
+    commands:
+      - source /tmp/build_env
+
+      # -----------------------------------------------------------------------
+      # Step 1: Compile Less → CSS
+      # -----------------------------------------------------------------------
+      - echo "=== [build] Step 1: Compiling Less to CSS ==="
+      - |
+        if [ -f styles/main.less ]; then
+          lessc styles/main.less assets/styles/main.scss.css
+          echo "Less compilation complete: assets/styles/main.scss.css"
+        else
+          echo "No Less source found at styles/main.less — skipping Less compilation"
+        fi
+
+      # -----------------------------------------------------------------------
+      # Step 2: Run PurgeCSS — cz-css-1005 fix
+      #
+      # PurgeCSS scans all HTML/JS/JSX content files to determine which CSS
+      # selectors are actually referenced, then removes unused rules from every
+      # CSS file under assets/styles/. This eliminates bloat from deprecated
+      # component styles (e.g. .ghost-widget-deprecated) that were kept by
+      # mistake, reducing the final container image size.
+      #
+      # The --rejected flag writes a rejected-selectors.json audit artefact
+      # that is uploaded to S3 in the post_build phase for ops-team review.
+      # -----------------------------------------------------------------------
+      - echo "=== [build] Step 2: Running PurgeCSS to remove unused CSS selectors (cz-css-1005) ==="
+      - |
+        # Create output directory for purged CSS files
+        mkdir -p assets/styles/purged
+
+        # Run PurgeCSS using the project configuration file
+        purgecss \
+          --config purgecss.config.js \
+          --output assets/styles/purged \
+          --rejected
+
+        echo "PurgeCSS complete. Purged files written to assets/styles/purged/"
+        ls -lh assets/styles/purged/ || true
+
+      - |
+        # Replace original CSS files with purged versions
+        echo "=== [build] Replacing original CSS files with PurgeCSS-optimised versions ==="
+        for purged_file in assets/styles/purged/*.css; do
+          original_file="assets/styles/$(basename $purged_file)"
+          if [ -f "$original_file" ]; then
+            original_size=$(wc -c < "$original_file")
+            purged_size=$(wc -c < "$purged_file")
+            echo "  $original_file: ${original_size} bytes → ${purged_size} bytes (saved $(( original_size - purged_size )) bytes)"
+            cp "$purged_file" "$original_file"
+          fi
+        done
+        echo "CSS optimisation complete."
+
+      # -----------------------------------------------------------------------
+      # Step 2b: Upload extracted base64 assets to S3 — cz-css-1010 fix
+      #
+      # Assets that were previously inlined as large base64 data URIs in CSS
+      # (e.g. splash-bg.png in old-theme.css) have been extracted to
+      # assets/images/. This step uploads them to the S3 assets bucket so
+      # they are available via CloudFront CDN (ASSET_BASE_URL) at runtime.
+      #
+      # The ECS Fargate sidecar container (ecs/task-definition.json) also
+      # syncs these assets on every task start, ensuring assets are always
+      # in sync with the running application version without a separate CI step.
+      # -----------------------------------------------------------------------
+      - echo "=== [build] Step 2b: Uploading extracted base64 assets to S3 (cz-css-1010) ==="
+      - |
+        if [ -d assets/images ] && [ "$(ls -A assets/images 2>/dev/null)" ]; then
+          aws s3 sync assets/images/ \
+            s3://${ASSET_S3_BUCKET}/assets/images/ \
+            --cache-control "public, max-age=31536000, immutable" \
+            --delete
+          echo "Extracted assets uploaded to s3://${ASSET_S3_BUCKET}/assets/images/"
+          ls -lh assets/images/
+        else
+          echo "No extracted assets found in assets/images/ — skipping S3 upload"
+        fi
+
+      # -----------------------------------------------------------------------
+      # Step 3: Build the multi-stage Docker image
+      # -----------------------------------------------------------------------
+      - echo "=== [build] Step 3: Building Docker image ==="
+      - |
+        docker build \
+          --tag $ECR_IMAGE_URI \
+          --tag $ECR_IMAGE_URI_LATEST \
+          --label "build.rule=cz-css-1005" \
+          --label "build.purgecss=enabled" \
+          --label "build.commit=$IMAGE_TAG" \
+          --label "build.timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          .
+      - echo "Docker image built: $ECR_IMAGE_URI"
+
+      # -----------------------------------------------------------------------
+      # Step 4: Verify no SCSS/LESS source files in final container — cz-css-1011
+      #
+      # CSS preprocessor source files (SCSS, LESS, Stylus) must NOT be present
+      # in the production container image. They bloat image size with unnecessary
+      # build sources. This step inspects the built image filesystem and fails
+      # the build immediately if any preprocessor source files are found,
+      # preventing a non-compliant image from being pushed to ECR and deployed
+      # to ECS Fargate services.
+      #
+      # Files checked: *.scss, *.less, *.styl, *.stylus
+      # Scope: entire container filesystem (/)
+      # -----------------------------------------------------------------------
+      - echo "=== [build] Step 4: Verifying no SCSS/LESS source files in container image (cz-css-1011) ==="
+      - |
+        echo "Scanning container image $ECR_IMAGE_URI for SCSS/LESS/Stylus source files..."
+
+        # Run a temporary container from the built image and search for preprocessor source files
+        SCSS_LESS_FILES=$(docker run --rm --entrypoint="" $ECR_IMAGE_URI \
+          sh -c "find / -type f \( -name '*.scss' -o -name '*.less' -o -name '*.styl' -o -name '*.stylus' \) 2>/dev/null || true")
+
+        if [ -n "$SCSS_LESS_FILES" ]; then
+          echo "ERROR [cz-css-1011]: SCSS/LESS/Stylus source files detected in production container image!"
+          echo "The following preprocessor source files must NOT be present in the runtime image:"
+          echo "$SCSS_LESS_FILES"
+          echo ""
+          echo "Remediation:"
+          echo "  1. Ensure .dockerignore excludes all *.scss, *.less, *.styl, *.stylus files."
+          echo "  2. Verify the Dockerfile does not COPY preprocessor source directories."
+          echo "  3. Compile SCSS/LESS to CSS in the build stage and copy only compiled CSS."
+          echo ""
+          echo "Build FAILED — image will NOT be pushed to ECR. Fix the above issues and retry."
+          exit 1
+        else
+          echo "PASS [cz-css-1011]: No SCSS/LESS/Stylus source files found in container image."
+          echo "Container image is compliant — proceeding to ECR push."
+        fi
+
+  # ---------------------------------------------------------------------------
+  # post_build: push image to ECR and upload audit artefacts
+  # ---------------------------------------------------------------------------
+  post_build:
+    commands:
+      - source /tmp/build_env
+
+      - echo "=== [post_build] Pushing Docker image to Amazon ECR ==="
+      - docker push $ECR_IMAGE_URI
+      - docker push $ECR_IMAGE_URI_LATEST
+      - echo "Image pushed: $ECR_IMAGE_URI"
+
+      # -----------------------------------------------------------------------
+      # Upload PurgeCSS audit artefact to S3 for ops-team review
+      # The rejected-selectors file lists every CSS rule that was stripped,
+      # enabling the team to audit removals without rebuilding the image.
+      # -----------------------------------------------------------------------
+      - echo "=== [post_build] Uploading PurgeCSS audit artefacts ==="
+      - |
+        if [ -n "$ARTEFACT_BUCKET" ]; then
+          ARTEFACT_KEY="purgecss-audit/$ECR_REPOSITORY_NAME/$IMAGE_TAG/rejected-selectors.json"
+          if ls assets/styles/purged/*.rejected.json 2>/dev/null; then
+            aws s3 cp assets/styles/purged/ \
+              s3://$ARTEFACT_BUCKET/$ARTEFACT_KEY \
+              --recursive \
+              --include "*.rejected.json" \
+              --content-type "application/json"
+            echo "PurgeCSS audit artefacts uploaded to s3://$ARTEFACT_BUCKET/$ARTEFACT_KEY"
+          else
+            echo "No rejected-selectors artefact found — skipping S3 upload"
+          fi
+        else
+          echo "ARTEFACT_BUCKET not set — skipping S3 upload of PurgeCSS audit artefacts"
+        fi
+
+      # Write imagedefinitions.json for ECS deployment integration
+      - echo "=== [post_build] Writing imagedefinitions.json for ECS deployment ==="
+      - |
+        printf '[{"name":"dashboard-app","imageUri":"%s"}]' $ECR_IMAGE_URI \
+          > imagedefinitions.json
+        cat imagedefinitions.json
+
+      - echo "=== [post_build] Build complete ==="
+
+# -----------------------------------------------------------------------------
+# Artefacts: files to pass to downstream CodePipeline stages
+# -----------------------------------------------------------------------------
+artifacts:
+  files:
+    # ECS deployment descriptor consumed by the Deploy stage
+    - imagedefinitions.json
+    # PurgeCSS audit artefacts for ops-team review
+    - assets/styles/purged/**/*.rejected.json
+  discard-paths: no
+
+# -----------------------------------------------------------------------------
+# Cache: speed up subsequent builds by caching npm global packages
+# -----------------------------------------------------------------------------
+cache:
+  paths:
+    - /root/.npm/**/*
+    - node_modules/**/*

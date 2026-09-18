@@ -1,0 +1,102 @@
+# =============================================================================
+# docker-compose.yml — dashboard-app (Local Development)
+# Spring Boot 3.2.5 / Java 17 / AWS ECS Fargate target
+#
+# IMPORTANT: This file contains ONLY the application service.
+# External services (databases, caches, message queues) are provided
+# separately and connected via environment variables.
+# =============================================================================
+
+version: "3.9"
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # dashboard-app — Spring Boot REST API
+  # ---------------------------------------------------------------------------
+  dashboard-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: dashboard-app:latest
+    container_name: dashboard-app
+
+    ports:
+      # Application port (server.port=8080 in application.properties)
+      - "8080:8080"
+
+    environment:
+      # -----------------------------------------------------------------------
+      # JVM tuning for containerised environments
+      # -----------------------------------------------------------------------
+      JAVA_OPTS: >-
+        -XX:+UseContainerSupport
+        -XX:MaxRAMPercentage=75.0
+        -XX:+UseG1GC
+        -Xms256m
+        -Xmx512m
+        -Djava.security.egd=file:/dev/./urandom
+
+      # -----------------------------------------------------------------------
+      # Spring Boot profile — activates docker-specific configuration
+      # -----------------------------------------------------------------------
+      SPRING_PROFILES_ACTIVE: docker
+
+      # -----------------------------------------------------------------------
+      # Application identity
+      # -----------------------------------------------------------------------
+      SPRING_APPLICATION_NAME: dashboard-app
+
+      # -----------------------------------------------------------------------
+      # Timezone
+      # -----------------------------------------------------------------------
+      TZ: UTC
+
+      # -----------------------------------------------------------------------
+      # External service connections — override with actual values at runtime.
+      # These are placeholders; real values are injected via ECS task definition
+      # environment variables or AWS Secrets Manager / SSM Parameter Store.
+      # -----------------------------------------------------------------------
+      # DATABASE_URL: jdbc:postgresql://db-host:5432/dashboard
+      # DATABASE_USERNAME: dashboard_user
+      # DATABASE_PASSWORD: changeme
+
+    volumes:
+      # Persist application logs on the host for local debugging
+      - ./logs:/app/logs
+
+    # -------------------------------------------------------------------------
+    # Health check — uses the custom /api/health endpoint exposed by
+    # HealthController.java. Interval is generous to allow JVM warm-up.
+    # -------------------------------------------------------------------------
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+    # -------------------------------------------------------------------------
+    # Resource limits — mirrors ECS Fargate task definition (cpu:512, mem:1024)
+    # -------------------------------------------------------------------------
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1024M
+        reservations:
+          cpus: "0.25"
+          memory: 512M
+
+    restart: unless-stopped
+
+    networks:
+      - app-network
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  app-network:
+    driver: bridge
+    name: dashboard-app-network

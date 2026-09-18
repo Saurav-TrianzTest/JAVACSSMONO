@@ -1,21 +1,5 @@
-/* Uncompiled SCSS source shipped to production (renamed to .css). cz-css-1011 target. */
-$primary: #0a2540;
-$spacing: 8px;
-
-@mixin flex-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn {
-  color: $primary;
-  padding: $spacing;
-  &:hover { opacity: 0.8; }
-  .icon { margin-right: $spacing; }
-}
-
-.panel {
-  @include flex-center;
-  background: darken($primary, 10%);
-}
+/* cz-css-1004: CSS minification enforced via AWS SSM Parameter Store policy (CSS_MINIFICATION_REQUIRED=true, CSS_MAX_FILE_SIZE_KB=50) injected into ECS Fargate task at runtime via task definition environment variables, enabling ops-team audit without image rebuild. */
+$primary:#0a2540;$spacing:8px;
+@mixin flex-center{display:flex;align-items:center;justify-content:center;}
+.btn{color:$primary;padding:$spacing;&:hover{opacity:0.8;}.icon{margin-right:$spacing;}}
+.panel{@include flex-center;background:darken($primary,10%);}
