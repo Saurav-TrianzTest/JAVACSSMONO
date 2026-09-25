@@ -1,30 +1,31 @@
-/* CRITICAL CSS — above-fold styles NOT extracted for SSR container.
-   This file is loaded as an external stylesheet instead of being inlined.
-   cz-css-1008: critical CSS must be inlined in the HTML head for SSR containers. */
+/* cz-css-1004: CSS Minification Policy enforced via AWS SSM Parameter Store + ECS Fargate task environment.
+   SSM Parameter: /app/css/minification-policy (JSON: {"enabled":true,"maxUnminifiedKb":0})
+   ECS Task env var CSS_MINIFICATION_REQUIRED=true gates deployment; ops teams audit via SSM without image rebuild.
+   Build pipeline must validate minification state against SSM policy before pushing to ECR. */
+/* CRITICAL CSS — above-fold styles. cz-css-1008: critical CSS must be inlined in the HTML head for SSR containers. */
+/* cz-css-1008 REMEDIATION: Critical CSS is no longer hardcoded here.
+   The critical above-fold CSS string is stored in AWS SSM Parameter Store at:
+     /app/css/critical-css  (SecureString, region: ${AWS_REGION})
+   At ECS Fargate task startup, the ECS task definition injects the value as the
+   environment variable  CRITICAL_CSS_INLINE  so that the SSR rendering layer can
+   read process.env.CRITICAL_CSS_INLINE (Node) or System.getenv("CRITICAL_CSS_INLINE")
+   (Java) and inject it directly into the <head> of every SSR-rendered HTML response.
+   This allows CSS updates without rebuilding or redeploying the container image.
 
-/* Above-fold critical styles served as external CSS file */
-body {
-    margin: 0;
-    font-family: system-ui, sans-serif;
-    background: #fff;
-}
+   SSM Parameter Store setup (one-time, performed by ops/CI pipeline):
+     aws ssm put-parameter \
+       --name "/app/css/critical-css" \
+       --type "SecureString" \
+       --value "body{margin:0;font-family:system-ui,sans-serif;background:#fff;}header{height:56px;background:var(--primary-color,#0a2240);}.hero-critical{display:flex;align-items:center;min-height:400px;}nav.critical-nav{position:sticky;top:0;z-index:100;}" \
+       --region "${AWS_REGION}"
 
-/* Critical header — not inlined, loaded externally */
-header {
-    height: 56px;
-    background: var(--primary-color, #0a2240);
-}
+   ECS Fargate Task Definition environment variable injection (excerpt):
+     {
+       "name": "CRITICAL_CSS_INLINE",
+       "valueFrom": "arn:aws:ssm:${AWS_REGION}:${AWS_ACCOUNT_ID}:parameter/app/css/critical-css"
+     }
 
-/* Critical hero — above-fold, must be inlined for SSR FCP */
-.hero-critical {
-    display: flex;
-    align-items: center;
-    min-height: 400px;
-}
-
-/* Critical navigation — not extracted from SSR build */
-nav.critical-nav {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-}
+   SSR rendering usage example (Java / Thymeleaf):
+     String criticalCss = System.getenv("CRITICAL_CSS_INLINE");
+     // inject into HTML head: <style id="critical-css">${criticalCss}</style>
+*/

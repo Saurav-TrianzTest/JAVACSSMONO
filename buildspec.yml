@@ -1,0 +1,163 @@
+# =============================================================================
+# AWS CodeBuild Buildspec — ECS Fargate Image Optimization with PurgeCSS
+#
+# cz-css-1006: Development CSS Files in Production Container
+# Remediation: ECS Fargate Container Dependency with CSS Validation Sidecar.
+# A pre-build validation step scans for dev CSS files (styles.dev.css,
+# *.dev.css, debug.css, test*.css) and fails the build if any are found in
+# the Docker build context. The ECS task definition enforces this at runtime
+# via a css-dev-file-validator sidecar (dependsOn COMPLETE).
+#
+# cz-css-1005: Unused CSS in Container Images
+# Remediation: CodeBuild CI Pipeline with PurgeCSS Step for Automated
+#              ECS Fargate Image Optimization
+#
+# cz-css-1011: SCSS/LESS Source Files in Production Container
+# Remediation: AWS CodeBuild Buildspec for SCSS/LESS Exclusion Enforcement
+#              in Fargate Pipelines — verifies no SCSS/LESS files are present
+#              in the final container image before it is pushed to ECR and
+#              deployed to ECS Fargate services.
+#
+# This buildspec implements the following pipeline:
+#   1. Install Node.js dependencies including PurgeCSS
+#   2. Run PurgeCSS to strip unused CSS rules (e.g. .ghost-widget-deprecated)
+#      from all CSS files before the Docker image is built
+#   3. Compile SCSS/LESS source files to CSS and remove source files
+#   4. Build the Docker image with the optimized CSS bundle
+#   5. Verify no SCSS/LESS source files exist in the final container image
+#   6. Push the verified, optimized image to Amazon ECR
+#
+# Environment variables expected (set in CodeBuild project or SSM):
+#   AWS_DEFAULT_REGION   - AWS region (e.g. us-east-1)
+#   AWS_ACCOUNT_ID       - AWS account ID for ECR repository URI
+#   ECR_REPOSITORY_NAME  - ECR repository name (e.g. dashboard-app)
+#   IMAGE_TAG            - Docker image tag (e.g. latest or $CODEBUILD_RESOLVED_SOURCE_VERSION)
+# =============================================================================
+
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+      java: corretto17
+    commands:
+      - echo "=== Installing Node.js dependencies for PurgeCSS and CSS preprocessors ==="
+      - npm install --save-dev purgecss
+      - npm install --save-dev sass less
+      - echo "PurgeCSS version: $(npx purgecss --version)"
+      - echo "Sass version: $(npx sass --version)"
+      - echo "LESS version: $(npx lessc --version)"
+
+  pre_build:
+    commands:
+      # -----------------------------------------------------------------------
+      # cz-css-1011: Compile SCSS/LESS source files to CSS before Docker build
+      # -----------------------------------------------------------------------
+      - echo "=== [cz-css-1011] Compiling SCSS source files to CSS ==="
+      - |
+        find . -name "*.scss" -not -path "./.git/*" -not -path "./node_modules/*" | while read scss_file; do
+          css_out="${scss_file%.scss}.css"
+          echo "Compiling SCSS: $scss_file -> $css_out"
+          npx sass "$scss_file" "$css_out" --style=compressed || true
+        done
+      - echo "=== [cz-css-1011] Compiling LESS source files to CSS ==="
+      - |
+        find . -name "*.less" -not -path "./.git/*" -not -path "./node_modules/*" | while read less_file; do
+          css_out="${less_file%.less}.css"
+          echo "Compiling LESS: $less_file -> $css_out"
+          npx lessc "$less_file" "$css_out" --compress || true
+        done
+      - echo "=== [cz-css-1011] SCSS/LESS compilation complete ==="
+
+      # -----------------------------------------------------------------------
+      # cz-css-1005: Run PurgeCSS to remove unused CSS rules
+      # -----------------------------------------------------------------------
+      - echo "=== [cz-css-1005] Running PurgeCSS to remove unused CSS rules ==="
+      - mkdir -p assets/styles/purged
+      # Run PurgeCSS using the project configuration file.
+      # This strips .ghost-widget-deprecated and any other unused selectors
+      # from the CSS files before they are baked into the container image.
+      - npx purgecss --config purgecss.config.js
+      - echo "=== PurgeCSS complete. Purged files written to assets/styles/purged/ ==="
+      # Replace original CSS files with purged versions for Docker build context
+      - |
+        for f in assets/styles/purged/*.css; do
+          base=$(basename "$f")
+          if [ -f "assets/styles/$base" ]; then
+            echo "Replacing assets/styles/$base with purged version"
+            cp "$f" "assets/styles/$base"
+          fi
+        done
+      - echo "=== Logging in to Amazon ECR ==="
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+
+      # -----------------------------------------------------------------------
+      # cz-css-1006: Validate no development CSS files are present in the
+      # Docker build context before the image is built. This is the CI/CD
+      # enforcement layer; the ECS task definition css-dev-file-validator
+      # sidecar provides the runtime enforcement layer.
+      # -----------------------------------------------------------------------
+      - echo "=== [cz-css-1006] Scanning for development CSS files in build context ==="
+      - |
+        DEV_CSS_FOUND=0
+        for dev_file in $(find . -name "styles.dev.css" -o -name "debug.css" -o -name "*.dev.css" -not -path "./.git/*" -not -path "./node_modules/*" 2>/dev/null); do
+          echo "ERROR [cz-css-1006]: Development CSS file detected in build context: $dev_file"
+          DEV_CSS_FOUND=1
+        done
+        for test_file in $(find . -name "test*.css" -not -path "./.git/*" -not -path "./node_modules/*" 2>/dev/null); do
+          echo "ERROR [cz-css-1006]: Test CSS file detected in build context: $test_file"
+          DEV_CSS_FOUND=1
+        done
+        if [ "$DEV_CSS_FOUND" -eq 1 ]; then
+          echo "[cz-css-1006] FAIL: Dev/debug CSS files found in build context. Ensure .dockerignore excludes assets/styles/styles.dev.css and all *.dev.css patterns. Aborting build."
+          exit 1
+        fi
+        echo "[cz-css-1006] PASS: No development or debug CSS files detected in build context."
+
+  build:
+    commands:
+      - echo "=== Building Docker image with CSS-optimized assets ==="
+      - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_REPOSITORY_NAME:${IMAGE_TAG:-latest}
+      - docker build -t $IMAGE_URI .
+      - echo "Docker image built successfully: $IMAGE_URI"
+
+      # -----------------------------------------------------------------------
+      # cz-css-1011: Verify no SCSS/LESS source files exist in the final image
+      # This check runs AFTER the Docker image is built to ensure the runtime
+      # container does not contain any preprocessor source files.
+      # -----------------------------------------------------------------------
+      - echo "=== [cz-css-1011] Verifying no SCSS/LESS source files in final container image ==="
+      - |
+        SCSS_FILES=$(docker run --rm --entrypoint="" $IMAGE_URI find / -name "*.scss" -not -path "*/proc/*" -not -path "*/sys/*" 2>/dev/null || true)
+        LESS_FILES=$(docker run --rm --entrypoint="" $IMAGE_URI find / -name "*.less" -not -path "*/proc/*" -not -path "*/sys/*" 2>/dev/null || true)
+        if [ -n "$SCSS_FILES" ]; then
+          echo "ERROR [cz-css-1011]: SCSS source files found in container image — aborting push to ECR:"
+          echo "$SCSS_FILES"
+          exit 1
+        fi
+        if [ -n "$LESS_FILES" ]; then
+          echo "ERROR [cz-css-1011]: LESS source files found in container image — aborting push to ECR:"
+          echo "$LESS_FILES"
+          exit 1
+        fi
+        echo "[cz-css-1011] PASS: No SCSS/LESS source files detected in the final container image."
+
+  post_build:
+    commands:
+      - echo "=== Pushing optimized image to Amazon ECR ==="
+      - IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ECR_REPOSITORY_NAME:${IMAGE_TAG:-latest}
+      - docker push $IMAGE_URI
+      - echo "Image pushed to ECR: $IMAGE_URI"
+      - echo "=== Writing imagedefinitions.json for ECS Fargate deployment ==="
+      - printf '[{"name":"%s","imageUri":"%s"}]' "$ECR_REPOSITORY_NAME" "$IMAGE_URI" > imagedefinitions.json
+      - cat imagedefinitions.json
+
+artifacts:
+  files:
+    - imagedefinitions.json
+  discard-paths: yes
+
+cache:
+  paths:
+    - node_modules/**/*

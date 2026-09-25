@@ -1,0 +1,189 @@
+{
+  "_comment": [
+    "cz-css-1012: Multi-Stage Build for CSS Processing — nginx.conf Injection via SSM.",
+    "The nginx.conf used in the multi-stage CSS container is stored in AWS SSM Parameter",
+    "Store and injected into the ECS Fargate task at runtime via the `secrets` field,",
+    "enabling environment-specific routing rules without rebuilding the image.",
+    "",
+    "cz-css-1010: ECS Fargate Sidecar Container for Asset Sync to S3 on Task Start.",
+    "This task definition snippet adds a sidecar container (essential: false) that syncs",
+    "extracted static assets (e.g. splash-bg.png, extracted from the previously inlined",
+    "base64 CSS data URI in old-theme.css) to S3 at task initialization.",
+    "",
+    "cz-css-1006: Development CSS Files in Production Container — CSS Validation Sidecar.",
+    "A short-lived CSS validation sidecar container (essential: false, dependsOn COMPLETE)",
+    "scans the application image for development CSS files (styles.dev.css, debug.css,",
+    "test styles) before the main application container is allowed to start.",
+    "If any dev CSS files are detected the sidecar exits with a non-zero code, preventing",
+    "the main container from starting and surfacing the violation in ECS task logs.",
+    "",
+    "The sidecar uses the ECS task IAM role to authenticate with S3 — no credentials are",
+    "hardcoded. Assets are always in sync with the running application version without a",
+    "separate CI step.",
+    "",
+    "Required ECS task environment variables (inject via ECS task definition or AWS Secrets Manager):",
+    "  ASSETS_S3_BUCKET  - S3 bucket name where assets are stored (e.g. my-app-assets)",
+    "  ASSETS_S3_PREFIX  - S3 key prefix for assets (e.g. dashboard-app/images)",
+    "  CDN_BASE_URL      - CloudFront distribution URL (e.g. https://d1234abcd.cloudfront.net)",
+    "                      This is referenced in old-theme.css for .splash background URL.",
+    "",
+    "Required SSM Parameter Store entries (cz-css-1012):",
+    "  /dashboard-app/nginx-conf  - Full nginx.conf content for the runtime container.",
+    "                               Stored as a SecureString or String parameter.",
+    "                               Injected as NGINX_CONF via the `secrets` field below.",
+    "",
+    "Required IAM permissions for the ECS task execution role:",
+    "  ssm:GetParameters on arn:aws:ssm:<region>:<account>:parameter/dashboard-app/*",
+    "  kms:Decrypt (if SSM parameter is a SecureString encrypted with a customer KMS key)",
+    "",
+    "Required IAM permissions for the ECS task role:",
+    "  s3:PutObject on arn:aws:s3:::${ASSETS_S3_BUCKET}/${ASSETS_S3_PREFIX}/*",
+    "  s3:GetObject on arn:aws:s3:::${ASSETS_S3_BUCKET}/${ASSETS_S3_PREFIX}/*"
+  ],
+  "family": "dashboard-app",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/ecsTaskRole",
+  "containerDefinitions": [
+    {
+      "name": "dashboard-app",
+      "image": "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/dashboard-app:${IMAGE_TAG}",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 80,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "CDN_BASE_URL",
+          "value": "${CDN_BASE_URL}"
+        },
+        {
+          "name": "ASSETS_S3_BUCKET",
+          "value": "${ASSETS_S3_BUCKET}"
+        },
+        {
+          "name": "ASSETS_S3_PREFIX",
+          "value": "${ASSETS_S3_PREFIX}"
+        }
+      ],
+      "secrets": [
+        {
+          "_comment": "cz-css-1012: nginx.conf injected from SSM Parameter Store at task startup. The entrypoint script writes this value to /etc/nginx/nginx.conf before nginx starts, enabling environment-specific routing rules without rebuilding the container image.",
+          "name": "NGINX_CONF",
+          "valueFrom": "arn:aws:ssm:${AWS_DEFAULT_REGION}:${AWS_ACCOUNT_ID}:parameter/dashboard-app/nginx-conf"
+        }
+      ],
+      "dependsOn": [
+        {
+          "containerName": "css-dev-file-validator",
+          "condition": "COMPLETE"
+        },
+        {
+          "containerName": "asset-sync-sidecar",
+          "condition": "COMPLETE"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/dashboard-app",
+          "awslogs-region": "${AWS_DEFAULT_REGION}",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    },
+    {
+      "name": "css-dev-file-validator",
+      "_comment": [
+        "cz-css-1006: Short-lived CSS validation sidecar (essential: false).",
+        "Scans the shared application assets volume for development CSS files",
+        "(styles.dev.css, *.dev.css, debug.css, test*.css) before the main",
+        "application container is allowed to start (dependsOn COMPLETE).",
+        "If any dev CSS files are found the sidecar exits with code 1, which",
+        "causes the ECS task to fail and surfaces the violation in CloudWatch Logs.",
+        "This enforces that no debug/development CSS styling reaches production,",
+        "preventing container image bloat and accidental exposure of debug styles.",
+        "essential: false — the sidecar exits after validation; the task lifecycle",
+        "is governed by the main application container."
+      ],
+      "image": "busybox:latest",
+      "essential": false,
+      "command": [
+        "sh",
+        "-c",
+        "set -e && echo '[cz-css-1006] Starting CSS dev-file validation...' && ASSET_DIR=/app/assets && DEV_CSS_PATTERNS='styles.dev.css debug.css test.css' && FOUND=0 && for pattern in $DEV_CSS_PATTERNS; do FILES=$(find $ASSET_DIR -name \"$pattern\" 2>/dev/null); if [ -n \"$FILES\" ]; then echo \"[cz-css-1006] ERROR: Development CSS file detected in production container: $FILES\"; FOUND=1; fi; done && FILES_DEV=$(find $ASSET_DIR -name '*.dev.css' 2>/dev/null); if [ -n \"$FILES_DEV\" ]; then echo \"[cz-css-1006] ERROR: Development CSS file (*.dev.css) detected in production container: $FILES_DEV\"; FOUND=1; fi && FILES_TEST=$(find $ASSET_DIR -name 'test*.css' 2>/dev/null); if [ -n \"$FILES_TEST\" ]; then echo \"[cz-css-1006] ERROR: Test CSS file (test*.css) detected in production container: $FILES_TEST\"; FOUND=1; fi && if [ \"$FOUND\" -eq 1 ]; then echo '[cz-css-1006] FAIL: Dev/debug CSS files found. Blocking main container startup. Remove dev CSS files from the image and ensure .dockerignore excludes assets/styles/styles.dev.css'; exit 1; fi && echo '[cz-css-1006] PASS: No development or debug CSS files detected. Main container cleared to start.'"
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "app-assets",
+          "containerPath": "/app/assets",
+          "readOnly": true
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/dashboard-app",
+          "awslogs-region": "${AWS_DEFAULT_REGION}",
+          "awslogs-stream-prefix": "css-dev-validator"
+        }
+      }
+    },
+    {
+      "name": "asset-sync-sidecar",
+      "_comment": [
+        "cz-css-1010: Sidecar container (essential: false) that syncs extracted static assets",
+        "to S3 at ECS task initialization using the task IAM role.",
+        "Decodes splash-bg.png.b64 (extracted from the previously inlined base64 CSS data URI)",
+        "to splash-bg.png and uploads it to S3 under ASSETS_S3_PREFIX/images/.",
+        "The main application container depends on this sidecar completing (condition: COMPLETE)",
+        "before starting, ensuring assets are always available in S3/CDN when the app starts.",
+        "essential: false means the task continues running even if this sidecar exits after sync."
+      ],
+      "image": "amazon/aws-cli:latest",
+      "essential": false,
+      "command": [
+        "sh",
+        "-c",
+        "set -e && echo 'Starting asset sync to S3...' && ASSET_DIR=/app/assets/images && S3_TARGET=s3://${ASSETS_S3_BUCKET}/${ASSETS_S3_PREFIX}/images && echo 'Decoding splash-bg.png from base64...' && base64 -d ${ASSET_DIR}/splash-bg.png.b64 > /tmp/splash-bg.png && echo 'Uploading splash-bg.png to S3...' && aws s3 cp /tmp/splash-bg.png ${S3_TARGET}/splash-bg.png --content-type image/png --cache-control 'public, max-age=31536000, immutable' && echo 'Asset sync complete. splash-bg.png uploaded to '${S3_TARGET}'/splash-bg.png'"
+      ],
+      "environment": [
+        {
+          "name": "ASSETS_S3_BUCKET",
+          "value": "${ASSETS_S3_BUCKET}"
+        },
+        {
+          "name": "ASSETS_S3_PREFIX",
+          "value": "${ASSETS_S3_PREFIX}"
+        }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "app-assets",
+          "containerPath": "/app/assets",
+          "readOnly": true
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/dashboard-app",
+          "awslogs-region": "${AWS_DEFAULT_REGION}",
+          "awslogs-stream-prefix": "asset-sync"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "name": "app-assets",
+      "_comment": "Shared volume populated by the main app container's Docker image assets directory"
+    }
+  ]
+}

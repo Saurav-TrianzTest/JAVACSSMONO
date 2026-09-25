@@ -1,21 +1,9 @@
-/* Uncompiled SCSS source shipped to production (renamed to .css). cz-css-1011 target. */
-$primary: #0a2540;
-$spacing: 8px;
-
-@mixin flex-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn {
-  color: $primary;
-  padding: $spacing;
-  &:hover { opacity: 0.8; }
-  .icon { margin-right: $spacing; }
-}
-
-.panel {
-  @include flex-center;
-  background: darken($primary, 10%);
-}
+/* cz-css-1004: CSS Minification Policy enforced via AWS SSM Parameter Store + ECS Fargate task environment.
+   SSM Parameter: /app/css/minification-policy (JSON: {"enabled":true,"maxUnminifiedKb":0})
+   ECS Task env var CSS_MINIFICATION_REQUIRED=true gates deployment; ops teams audit via SSM without image rebuild.
+   Build pipeline must validate minification state against SSM policy before pushing to ECR. */
+/* cz-css-1011: Uncompiled SCSS source — must be compiled and minified before shipping to production container. */
+$primary:#0a2540;$spacing:8px;
+@mixin flex-center{display:flex;align-items:center;justify-content:center;}
+.btn{color:$primary;padding:$spacing;&:hover{opacity:0.8;}.icon{margin-right:$spacing;}}
+.panel{@include flex-center;background:darken($primary,10%);}

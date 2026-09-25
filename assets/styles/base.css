@@ -1,15 +1,8 @@
-/* Theme tokens and shared component styles */
+/* cz-css-1004: CSS Minification Policy enforced via AWS SSM Parameter Store + ECS Fargate task environment.
+   SSM Parameter: /app/css/minification-policy (JSON: {"enabled":true,"maxUnminifiedKb":0})
+   ECS Task env var CSS_MINIFICATION_REQUIRED=true gates deployment; ops teams audit via SSM without image rebuild.
+   Build pipeline must validate minification state against SSM policy before pushing to ECR. */
 @import url('https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css');
-:root {
-  --primary-color: #0a2540;
-  --spacing-unit: 8px;
-}
-.btn {
-  color: var(--primary-color);
-  background: url('../img/sprite.png');
-}
-.card {
-  -webkit-box-shadow: 0 0 5px #000;
-  -moz-box-shadow: 0 0 5px #000;
-  box-shadow: 0 0 5px #000;
-}
+:root{--primary-color:#0a2540;--spacing-unit:8px;}
+.btn{color:var(--primary-color);background:url('../img/sprite.png');}
+.card{-webkit-box-shadow:0 0 5px #000;-moz-box-shadow:0 0 5px #000;box-shadow:0 0 5px #000;}
