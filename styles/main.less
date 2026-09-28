@@ -1,2 +1,17 @@
+// =============================================================================
+// main.less — LESS source file (cz-css-1011 remediation)
+//
+// This file is compiled to plain CSS during the Docker build stage using the
+// LESS compiler (lessc). Only the compiled CSS output is copied into the
+// production container image; this source file is excluded via .dockerignore.
+// =============================================================================
+
 @primary: #0a2540;
-.btn { color: @primary; &:hover { opacity: 0.8; } }
+
+.btn {
+  color: @primary;
+
+  &:hover {
+    opacity: 0.8;
+  }
+}

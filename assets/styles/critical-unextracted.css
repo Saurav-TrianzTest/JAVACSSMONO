@@ -1,30 +1,49 @@
-/* CRITICAL CSS — above-fold styles NOT extracted for SSR container.
-   This file is loaded as an external stylesheet instead of being inlined.
-   cz-css-1008: critical CSS must be inlined in the HTML head for SSR containers. */
+/* =============================================================================
+ * critical-unextracted.css
+ * cz-css-1008 remediation: Critical above-fold CSS extracted via Critters
+ * for inline injection in AKS SSR containers.
+ *
+ * These rules represent the critical above-fold styles that Critters will
+ * inline into the <head> of SSR-rendered HTML responses served from
+ * Kubernetes pods, ensuring fast First Contentful Paint (FCP) without
+ * render-blocking external stylesheet requests.
+ *
+ * Build pipeline:
+ *   1. Critters scans the SSR HTML output and identifies which of these
+ *      rules are used above the fold.
+ *   2. Matched rules are inlined into <style> tags in the <head>.
+ *   3. The remaining non-critical CSS is loaded asynchronously via
+ *      <link rel="preload"> / <link rel="stylesheet"> to avoid blocking.
+ *
+ * Usage: npm run extract:critical
+ *   Runs Critters against the SSR-rendered HTML in dist/ssr/ and writes
+ *   the inlined output to dist/ssr-critical/.
+ * =============================================================================
+ */
 
-/* Above-fold critical styles served as external CSS file */
+/* --- Reset & Base (above-fold critical) ----------------------------------- */
 body {
-    margin: 0;
-    font-family: system-ui, sans-serif;
-    background: #fff;
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  background: #fff;
 }
 
-/* Critical header — not inlined, loaded externally */
+/* --- Header (always above the fold) --------------------------------------- */
 header {
-    height: 56px;
-    background: var(--primary-color, #0a2240);
+  height: 56px;
+  background: var(--primary-color, #0a2240);
 }
 
-/* Critical hero — above-fold, must be inlined for SSR FCP */
+/* --- Hero section (first visible content block) --------------------------- */
 .hero-critical {
-    display: flex;
-    align-items: center;
-    min-height: 400px;
+  display: flex;
+  align-items: center;
+  min-height: 400px;
 }
 
-/* Critical navigation — not extracted from SSR build */
+/* --- Sticky navigation (above-fold, affects layout immediately) ----------- */
 nav.critical-nav {
-    position: sticky;
-    top: 0;
-    z-index: 100;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }

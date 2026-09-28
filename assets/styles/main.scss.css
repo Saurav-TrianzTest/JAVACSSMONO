@@ -1,21 +1,28 @@
-/* Uncompiled SCSS source shipped to production (renamed to .css). cz-css-1011 target. */
-$primary: #0a2540;
-$spacing: 8px;
-
-@mixin flex-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* =============================================================================
+ * main.scss.css — Compiled CSS output (cz-css-1011 remediation)
+ *
+ * This file is the compiled CSS artifact generated from main.scss during the
+ * Docker build stage. SCSS-specific syntax (variables, mixins, nesting) has
+ * been resolved to standard CSS. The SCSS source (main.scss) is excluded from
+ * the production container image via .dockerignore.
+ * ============================================================================= */
 
 .btn {
-  color: $primary;
-  padding: $spacing;
-  &:hover { opacity: 0.8; }
-  .icon { margin-right: $spacing; }
+  color: #0a2540;
+  padding: 8px;
+}
+
+.btn:hover {
+  opacity: 0.8;
+}
+
+.btn .icon {
+  margin-right: 8px;
 }
 
 .panel {
-  @include flex-center;
-  background: darken($primary, 10%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #061829;
 }

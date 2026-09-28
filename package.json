@@ -1,0 +1,26 @@
+{
+  "name": "javacssmonoaks-css-build",
+  "version": "1.0.0",
+  "description": "CSS optimization pipeline for AKS production container (cz-css-1004 + cz-css-1005 + cz-css-1008 + cz-css-1011)",
+  "private": true,
+  "scripts": {
+    "compile:scss": "sass assets/styles/main.scss assets/styles/main.scss.css --no-source-map",
+    "compile:less": "lessc styles/main.less styles/main.css",
+    "compile:preprocessors": "npm run compile:scss && npm run compile:less",
+    "purge:css": "purgecss --css assets/styles/*.css --content 'frontend/**/*.js' --output purged/styles/",
+    "build:css": "for f in purged/styles/*.css; do npx postcss \"$f\" --use cssnano -o \"dist/styles/$(basename $f)\"; done",
+    "minify:css": "postcss assets/styles/**/*.css --use cssnano --dir dist/styles --no-map",
+    "optimize:css": "npm run compile:preprocessors && npm run purge:css && npm run build:css",
+    "extract:critical": "node scripts/extract-critical.js"
+  },
+  "devDependencies": {
+    "postcss": "^8.4.38",
+    "postcss-cli": "^11.0.0",
+    "cssnano": "^7.0.1",
+    "purgecss": "^6.0.0",
+    "@fullhuman/postcss-purgecss": "^6.0.0",
+    "critters": "^0.0.22",
+    "sass": "^1.77.4",
+    "less": "^4.2.0"
+  }
+}

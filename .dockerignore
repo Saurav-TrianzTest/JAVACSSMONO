@@ -1,0 +1,76 @@
+# =============================================================================
+# .dockerignore — Exclude SCSS/LESS preprocessor source files from the
+# production container image (cz-css-1011 remediation).
+#
+# cz-css-1006 (Development CSS Files in Production Container):
+#   Excludes development/debug CSS files (*.dev.css, debug.css, test styles)
+#   from the production container image. These files bloat image size and may
+#   expose debug styling information. Only production-ready CSS artifacts are
+#   included in the final AKS deployment image pushed to Azure Container
+#   Registry (ACR).
+#
+# SCSS and LESS source files are compiled to plain CSS during the multi-stage
+# Docker build (css-builder stage). Only the compiled CSS artifacts are copied
+# into the production image. These source patterns are excluded here to ensure
+# they cannot be inadvertently included in the runtime image via any COPY
+# instruction that uses wildcards.
+# =============================================================================
+
+# Exclude development/debug CSS files from production container (cz-css-1006)
+**/*.dev.css
+**/*.debug.css
+**/*.test.css
+**/debug.css
+**/test.css
+**/styles.dev.css
+
+# Exclude SCSS preprocessor source files (cz-css-1011)
+**/*.scss
+**/*.sass
+
+# Exclude LESS preprocessor source files (cz-css-1011)
+**/*.less
+
+# Exclude Stylus preprocessor source files (cz-css-1011)
+**/*.styl
+**/*.stylus
+
+# Exclude Maven wrapper files (never needed inside Docker — use system mvn)
+mvnw
+mvnw.cmd
+.mvn/
+
+# Exclude Gradle wrapper files (never needed inside Docker — use system gradle)
+gradlew
+gradlew.bat
+gradle/wrapper/
+
+# Exclude node_modules from all stages (use npm install inside Docker)
+node_modules/
+**/node_modules/
+
+# Exclude npm lock files that are not needed in the image
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Exclude Git metadata
+.git/
+.gitignore
+
+# Exclude IDE and OS metadata
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Exclude development and build artifacts not needed in the image
+*.md
+.env
+.env.*
+dist/
+purged/
+target/
+
+# Exclude test sources from production image
+src/test/
