@@ -1,0 +1,7 @@
+# Development CSS files must not ship in the production image (cz-css-1006)
+**/*.dev.css
+**/debug.css
+**/*.debug.css
+**/*.test.css
+**/test-styles*.css
+.git

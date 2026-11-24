@@ -1,8 +1,8 @@
-/* CRITICAL CSS — above-fold styles NOT extracted for SSR container.
-   This file is loaded as an external stylesheet instead of being inlined.
-   cz-css-1008: critical CSS must be inlined in the HTML head for SSR containers. */
+/* CRITICAL CSS — above-fold styles source for SSR container.
+   cz-css-1008: Critters (scripts/inline-critical-css.js, run in the Dockerfile build)
+   extracts the critical rules from this file and inlines them in the HTML head. */
 
-/* Above-fold critical styles served as external CSS file */
+/* Above-fold critical styles - inlined into HTML head by Critters at build time */
 body {
     margin: 0;
     font-family: system-ui, sans-serif;
