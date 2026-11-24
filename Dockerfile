@@ -1,26 +1,31 @@
-# Multi-stage build (cz-js-1014): Node.js build tooling stays in the build stage; only compiled output ships in nginx:alpine
-# ---- Build stage: compile CSS and strip unused rules with PurgeCSS ----
-FROM node:18 AS build
+# ---- Build stage ----
+FROM maven:3.9.4-eclipse-temurin-17 AS builder
+WORKDIR /workspace
+
+# Cache dependencies: copy pom.xml first
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+# Copy sources and build
+COPY src ./src
+RUN mvn clean package -DskipTests -B
+
+# ---- Runtime stage ----
+FROM eclipse-temurin:17-jre-alpine
 WORKDIR /app
-COPY . .
-# Safety net (cz-css-1006): ensure dev/debug CSS never reaches the runtime image
-RUN find /app -type f \( -name "*.dev.css" -o -name "debug.css" -o -name "*.debug.css" -o -name "*.test.css" \) -delete
-RUN npm install less && npm run build:css
-RUN npm install --no-save purgecss && \
-    mkdir -p /app/dist/styles && \
-    npx purgecss \
-      --css "assets/styles/*.css" \
-      --content "**/*.html" "frontend/**/*.js" "frontend/**/*.jsx" "src/main/resources/**/*.html" \
-      --output /app/dist/styles
 
-# Extract critical CSS with Critters and inline it into HTML (cz-css-1008)
-RUN npm install --no-save critters && \
-    node scripts/inline-critical-css.js
+ENV TZ=UTC \
+    SPRING_PROFILES_ACTIVE=docker \
+    SERVER_PORT=8080 \
+    JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -Xms256m -Dfile.encoding=UTF-8 -Duser.timezone=UTC"
 
-# ---- Runtime stage (cz-css-1012): minimal nginx:alpine serving only compiled output ----
-FROM nginx:alpine
-COPY --from=build /app/assets /usr/share/nginx/html/assets
-COPY --from=build /app/cdn-assets /usr/share/nginx/html/cdn-assets
-COPY --from=build /app/dist/styles/ /usr/share/nginx/html/assets/styles/
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+RUN addgroup -S app && adduser -S app -G app
+
+COPY --from=builder /workspace/target/*.jar /app/app.jar
+RUN chown -R app:app /app
+
+USER app
+EXPOSE 8080
+
+# exec form via sh so JAVA_OPTS expands and java receives signals (PID 1) for graceful shutdown
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

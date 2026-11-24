@@ -1,7 +1,21 @@
-# Development CSS files must not ship in the production image (cz-css-1006)
+# Development CSS files must not ship in images
 **/*.dev.css
 **/debug.css
 **/*.debug.css
 **/*.test.css
 **/test-styles*.css
 .git
+.gitignore
+target/
+*.md
+mvnw
+mvnw.cmd
+.mvn/
+gradlew
+gradlew.bat
+gradle/wrapper/
+.idea/
+.vscode/
+*.iml
+.DS_Store
+node_modules/
